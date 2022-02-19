@@ -12,7 +12,7 @@ const TWITTER_HANDLE = 'arome_dev';
 const TWITTER_LINK = `https://twitter.com/${TWITTER_HANDLE}`;
 
 const tld = '.meme';
-const CONTRACT_ADDRESS = '0xEd69B661eF4A59d144a0f451B7c12da481A45d1D';
+const CONTRACT_ADDRESS = '0x1b55021634088d6000Fab8c862A3353c0C47a0EA';
 
 const App = () => {
 
@@ -20,6 +20,9 @@ const App = () => {
 	const [domain, setDomain] = useState('');
   	const [record, setRecord] = useState('');
 	const [network, setNetwork] = useState('');
+	const [editing, setEditing] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [mints, setMints] = useState([]);
 
 	const connectWallet = async () => {
 		try {
@@ -30,10 +33,7 @@ const App = () => {
 				return;
 			}
 
-			// Fancy method to request access to account.
 			const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-		
-			// Boom! This should print out public address once we authorize Metamask.
 			console.log("Connected", accounts[0]);
 			setCurrentAccount(accounts[0]);
 		} catch (error) {
@@ -42,7 +42,6 @@ const App = () => {
 	}
 
 	const checkIfWalletIsConnected = async () => {
-		// First make sure we have access to window.ethereum
 		const { ethereum } = window;
 
 		if (!ethereum) {
@@ -72,7 +71,7 @@ const App = () => {
 	const switchNetwork = async () => {
 		if (window.ethereum) {
 			try {
-				// Try to switch to the Mumbai testnet
+				// switch to the Mumbai testnet
 				await window.ethereum.request({
 					method: 'wallet_switchEthereumChain',
 					params: [{ chainId: '0x13881' }], // Check networks.js for hexadecimal network ids
@@ -105,7 +104,6 @@ const App = () => {
 				console.log(error);
 			}
 		} else {
-			// If window.ethereum is not found then MetaMask is not installed
 			alert('MetaMask is not installed. Please install it to use this app: https://metamask.io/download.html');
 		} 
 	}
@@ -137,6 +135,10 @@ const App = () => {
 				await tx1.wait();
 
 				console.log("Record set! https://mumbai.polygonscan.com/tx/"+tx1.hash);
+
+				setTimeout(() => {
+					fetchMints();
+				}, 2000);
 				
 				setRecord('');
 				setDomain('');
@@ -150,7 +152,103 @@ const App = () => {
 		console.log(error);
 	  }
 	}
-	// Create a function to render if wallet is not connected yet
+
+	const updateDomain = async () => {
+		if (!record || !domain) { return }
+		setLoading(true);
+		console.log("Updating domain", domain, "with record", record);
+		  try {
+			const { ethereum } = window;
+			if (ethereum) {
+				const provider = new ethers.providers.Web3Provider(ethereum);
+				const signer = provider.getSigner();
+				const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI.abi, signer);
+	
+				let tx = await contract.setRecord(domain, record);
+				await tx.wait();
+				console.log("Record set https://mumbai.polygonscan.com/tx/"+tx.hash);
+	
+				fetchMints();
+				setRecord('');
+				setDomain('');
+			}
+		  } catch(error) {
+			console.log(error);
+		  }
+		setLoading(false);
+	}
+
+	const fetchMints = async () => {
+		try {
+			const { ethereum } = window;
+			if (ethereum) {
+				const provider = new ethers.providers.Web3Provider(ethereum);
+				const signer = provider.getSigner();
+				const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI.abi, signer);
+				// Get all the domain names from the contract
+				const names = await contract.getAllNames();
+					
+				// For each name, get the record and the address
+				const mintRecords = await Promise.all(names.map(async (name) => {
+				const mintRecord = await contract.records(name);
+				const owner = await contract.domains(name);
+				return {
+					id: names.indexOf(name),
+					name: name,
+					record: mintRecord,
+					owner: owner,
+				};
+			}));
+	
+			console.log("MINTS FETCHED ", mintRecords);
+			setMints(mintRecords);
+			}
+		} catch(error){
+			console.log(error);
+		}
+	}
+	useEffect(() => {
+		if (network === 'Polygon Mumbai Testnet') {
+			fetchMints();
+		}
+	}, [currentAccount, network]);
+
+	const renderMints = () => {
+		if (currentAccount && mints.length > 0) {
+			return (
+				<div className="mint-container">
+					<p className="subtitle"> Recently minted domains!</p>
+					<div className="mint-list">
+						{ mints.map((mint, index) => {
+							return (
+								<div className="mint-item" key={index}>
+									<div className='mint-row'>
+										<a className="link" href={`https://testnets.opensea.io/assets/mumbai/${CONTRACT_ADDRESS}/${mint.id}`} target="_blank" rel="noopener noreferrer">
+											<p className="underlined">{' '}{mint.name}{tld}{' '}</p>
+										</a>
+										{/* If mint.owner is currentAccount, add an "edit" button*/}
+										{ mint.owner.toLowerCase() === currentAccount.toLowerCase() ?
+											<button className="edit-button" onClick={() => editRecord(mint.name)}>
+												<img className="edit-icon" src="https://img.icons8.com/metro/26/000000/pencil.png" alt="Edit button" />
+											</button>
+											:
+											null
+										}
+									</div>
+						<p> {mint.record} </p>
+					</div>)
+					})}
+				</div>
+			</div>);
+		}
+	};
+	const editRecord = (name) => {
+		console.log("Editing record for", name);
+		setEditing(true);
+		setDomain(name);
+	}
+
+	// function to render if wallet is not connected yet
 	const renderNotConnectedContainer = () => (
 		<div className="connect-wallet-container">
 			<img src="https://media.giphy.com/media/d3mlE7uhX8KFgEmY/giphy.gif" alt="Meme gif" />
@@ -163,12 +261,11 @@ const App = () => {
 		if (network !== 'Polygon Mumbai Testnet') {
 			return (
 				<div className="connect-wallet-container">
-					<h2>Please switch to Polygon Mumbai Testnet</h2>
-					{/* This button will call our switch network function */}
-					<button className='cta-button mint-button' onClick={switchNetwork}>Click here to switch</button>
+					<p>Please connect to Polygon Mumbai Testnet</p>
 				</div>
 			);
 		}
+
 		return (
 			<div className="form-container">
 				<div className="first-row">
@@ -184,19 +281,24 @@ const App = () => {
 				<input
 					type="text"
 					value={record}
-					placeholder='whats your area of coverage?'
+					placeholder='whats ur ninja power?'
 					onChange={e => setRecord(e.target.value)}
 				/>
-
-				<div className="button-container">
-					<button className='cta-button mint-button' disabled={null} onClick={mintDomain}>
-						Mint
-					</button>  
-					<button className='cta-button mint-button' disabled={null} onClick={null}>
-						Set data
-					</button>  
-				</div>
-
+					{/* If the editing variable is true, return the "Set record" and "Cancel" button */}
+					{editing ? (
+						<div className="button-container">
+							<button className='cta-button mint-button' disabled={loading} onClick={updateDomain}>
+								Set record
+							</button>
+							<button className='cta-button mint-button' onClick={() => {setEditing(false)}}>
+								Cancel
+							</button>  
+						</div>
+					) : (
+						<button className='cta-button mint-button' disabled={loading} onClick={mintDomain}>
+							Mint
+						</button>  
+					)}
 			</div>
 		);
 	}
@@ -222,9 +324,9 @@ const App = () => {
 					</header>
 				</div>
 
-				{!currentAccount && renderNotConnectedContainer()}{!currentAccount && renderNotConnectedContainer()}{!currentAccount && renderNotConnectedContainer()}
-				{/* Render the input form if an account is connected */}
+				{!currentAccount && renderNotConnectedContainer()}
 				{currentAccount && renderInputForm()}
+				{mints && renderMints()}
 
         	<div className="footer-container">
 					<img alt="Twitter Logo" className="twitter-logo" src={twitterLogo} />
