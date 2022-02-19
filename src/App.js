@@ -10,7 +10,6 @@ import { networks } from './utils/networks';
 // Constants
 const TWITTER_HANDLE = 'arome_dev';
 const TWITTER_LINK = `https://twitter.com/${TWITTER_HANDLE}`;
-
 const tld = '.meme';
 const CONTRACT_ADDRESS = '0x1b55021634088d6000Fab8c862A3353c0C47a0EA';
 
