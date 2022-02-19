@@ -73,7 +73,7 @@ const App = () => {
 		  const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI.abi, signer);
 	
 				console.log("Going to pop wallet now to pay gas...")
-		  let tx = await contract.register(domain, {value: ethers.utils.parseEther(price)});
+		  let tx = await contract.registerName(domain, {value: ethers.utils.parseEther(price)});
 				const receipt = await tx.wait();
 	
 				if (receipt.status === 1) {
